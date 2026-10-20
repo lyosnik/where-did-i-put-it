@@ -461,6 +461,25 @@
     if (o.sub!==undefined) el.heroSub.textContent=o.sub;
     el.wave.className = o.wave ? "on" : "";
   }
+  /* One place to set every button's label, so a bad state can never linger. */
+  function buttonState(state){
+    if (state==="listening"){
+      el.btnRemember.disabled=true; el.btnAsk.disabled=true;
+      el.btnRemember.classList.add("on");
+      el.rememberLabel.textContent="Tap To Stop";
+      el.rememberSub.textContent="Listening now…";
+    }else if (state==="thinking"){
+      el.btnRemember.disabled=true; el.btnAsk.disabled=true;
+      el.btnRemember.classList.remove("on");
+      el.rememberLabel.textContent="Just a moment…";
+      el.rememberSub.textContent="Working it out";
+    }else{
+      el.btnRemember.disabled=false; el.btnAsk.disabled=false;
+      el.btnRemember.classList.remove("on");
+      el.rememberLabel.textContent="Remember This";
+      el.rememberSub.textContent="Tap, speak, tap again";
+    }
+  }
   function showHeard(t){
     if (!t){ el.heard.className=""; el.heard.textContent=""; return; }
     el.heard.className="on";
@@ -472,7 +491,13 @@
      VOICE IN
   ============================================================ */
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  var rec=null, mode=null, finalText="", fallbackTimer=null;
+  var rec=null, mode=null, finalText="", interimText="", fallbackTimer=null, settleTimer=null;
+
+  /* The instant the speaker taps stop, we already have words on screen from
+     the interim results. Act on those immediately and let the browser's
+     final transcript land in the background — waiting for it is what made
+     "Tap To Stop" feel slow. */
+  var pendingTimer=null;
 
   function startListening(which){
     if (!SR){
@@ -480,14 +505,11 @@
       setHero({icon:"⚠️", head:"Speech isn’t available", main:"Tap a tile", sub:"You can still save and find things by tapping."});
       return;
     }
-    mode=which; finalText="";
+    mode=which; finalText=""; interimText="";
     hideFix(); showHeard("");
-    el.btnRemember.disabled=true; el.btnAsk.disabled=true;
+    buttonState("listening");
 
     if (which==="remember"){
-      el.btnRemember.classList.add("on");
-      el.rememberLabel.textContent="Tap To Stop";
-      el.rememberSub.textContent="Listening now…";
       setStatus("listening","Listening. Say where you put it…");
       setHero({icon:"🎙️", live:true, wave:true, head:"Listening…",
                main:"Where did you put it?", sub:"Say it in your own words. Tap the red button when you’re done."});
@@ -499,18 +521,19 @@
 
     try{
       rec=new SR();
-      rec.lang="en-AU"; rec.continuous=false; rec.interimResults=true; rec.maxAlternatives=3;
+      rec.lang="en-AU";
+      rec.continuous=true;        /* keep the mic open until they tap stop */
+      rec.interimResults=true;    /* we act on this text, not the final one */
+      rec.maxAlternatives=1;      /* three guesses tripled the work per recording */
 
       rec.onresult=function(ev){
-        var interim="";
-        for (var i=ev.resultIndex;i<ev.results.length;i++){
+        interimText="";
+        for (var i=0;i<ev.results.length;i++){
           var res=ev.results[i];
-          if (res.isFinal){
-            finalText += res[0].transcript + " ";
-            for (var a=1;a<res.length;a++) finalText += res[a].transcript + " ";
-          } else interim += res[0].transcript;
+          if (res.isFinal) finalText += res[0].transcript + " ";
+          else interimText += res[0].transcript;
         }
-        var shown=(finalText+" "+interim).trim();
+        var shown=(finalText+" "+interimText).trim();
         if (shown){ showHeard(shown); if (which==="remember") setHero({main:shown}); }
       };
 
@@ -525,30 +548,58 @@
         finishListening(ev.error==="no-speech"||ev.error==="aborted");
       };
 
-      rec.onend=function(){ finishListening(false); };
+      /* If the browser ends the session on its own, give the final result a
+         moment to arrive, then use whatever we have. */
+      rec.onend=function(){
+        if (!mode) return;
+        clearTimeout(settleTimer);
+        settleTimer=setTimeout(function(){ finishListening(false); }, 120);
+      };
       rec.start();
 
       clearTimeout(fallbackTimer);
-      fallbackTimer=setTimeout(function(){ if (mode){ try{rec.stop();}catch(e){} } },15000);
+      fallbackTimer=setTimeout(function(){ if (mode){ try{rec.stop();}catch(e){} } },20000);
     }catch(e){
       resetButtons();
       setStatus("","Couldn’t start listening. Try tapping again.");
     }
   }
 
-  function resetButtons(){
-    el.btnRemember.disabled=false; el.btnAsk.disabled=false;
-    el.btnRemember.classList.remove("on");
-    el.rememberLabel.textContent="Remember This";
-    el.rememberSub.textContent="Tap, speak, tap again";
+  function resetButtons(){ buttonState("idle"); }
+
+  /* Stop now, act now. The words are already on screen from the interim
+     results, so there is no reason to wait for the browser's final pass. */
+  function stopListening(){
+    if (!mode) return;
+    var which=mode;
+    var text=(finalText+" "+interimText).trim();
+
+    /* Return the button to its normal state straight away — the tap feels
+       instant even before the answer appears. */
+    mode=null;
+    resetButtons();
+
+    /* Tell the browser to stop in the background; we already have our text. */
+    if (rec){
+      try{ rec.onresult=null; rec.onend=null; rec.onerror=null; rec.stop(); }catch(e){}
+    }
+
+    if (text){
+      setStatus("working","Got it…");
+      showHeard(text);
+      if (which==="remember") handleRemember(text); else handleAsk(text);
+    }else{
+      setHero({icon:"🤔", head:"", main:"I didn’t catch that", sub:"Speak close to the phone, or tap a tile below."});
+      setStatus("","I didn’t catch that.");
+      speak("I didn't catch that. Try again.");
+    }
   }
-  function stopListening(){ if (rec){ try{rec.stop();}catch(e){} } }
 
   function finishListening(quiet){
     clearTimeout(fallbackTimer);
     var which=mode; mode=null; resetButtons();
     if (!which) return;
-    var text=finalText.trim();
+    var text=(finalText+" "+interimText).trim();
     if (!text){
       setHero({icon:"🤔", head:"", main:"I didn’t catch that", sub:"Speak close to the phone, or tap a tile below."});
       setStatus("","I didn’t catch that.");
@@ -578,6 +629,7 @@
     saveEntries();
     showHeard("");
     setStatus("ok","Saved.");
+    buttonState("idle");
     setHero({ icon:item.emoji, head:"Saved " + whenPhrase(entry.ts),
               main:titleCase(item.key)+" — "+entry.place.toLowerCase()+".",
               sub:"Tap the blue button again whenever this changes." });
@@ -615,6 +667,7 @@
   function recall(item){
     var hit=recallFor(item.key);
     showHeard("");
+    buttonState("idle");
     if (!hit){
       setStatus("ok","Nothing saved yet.");
       setHero({icon:item.emoji, head:"No answer yet",
