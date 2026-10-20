@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+
+<!-- Installable app: iOS uses the apple-* tags, Android uses the manifest. -->
+<title>Where Did I Put It?</title>
+<meta name="description" content="Say where you put your keys, glasses or wallet, and ask any time. Big buttons, spoken answers, works without internet.">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1b3a63">
+
+<!-- iOS -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Where Did I?">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+
+<style>
+  :root{
+    --ink:#0f2137;
+    --ink-soft:#41546e;
+    --paper:#eef1f6;
+    --card:#ffffff;
+    --blue:#1b5fb0;
+    --green:#1d7a46;
+    --red:#b03027;
+    --amber:#c07d12;
+    --tile:#f4f7fb;
+    --line:#dbe2ec;
+    --shadow:0 2px 0 rgba(15,33,55,.16), 0 10px 26px rgba(15,33,55,.10);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;margin:0;}
+
+  /* Standalone (home-screen) mode fills the screen and respects the notch. */
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    color:var(--ink);
+    background:
+      radial-gradient(1200px 700px at 50% -200px, #dbe6f6 0%, rgba(219,230,246,0) 70%),
+      var(--paper);
+    font-size:20px;line-height:1.3;
+    display:flex;flex-direction:column;
+    padding:calc(14px + env(safe-area-inset-top)) 16px calc(14px + env(safe-area-inset-bottom));
+    gap:13px;
+    max-width:760px;margin:0 auto;
+    min-height:100%;
+    overflow-x:hidden;
+    -webkit-user-select:none;user-select:none;
+    overscroll-behavior:none;
+  }
+
+  /* ---------------- top bar ---------------- */
+  header{display:flex;align-items:center;gap:12px;}
+  .logo{
+    width:50px;height:50px;border-radius:15px;flex:0 0 auto;
+    background:linear-gradient(160deg,#2a74cc,#154a8c);
+    display:flex;align-items:center;justify-content:center;
+    font-size:27px;box-shadow:0 3px 0 rgba(15,33,55,.2);
+  }
+  h1{font-size:24px;margin:0;font-weight:800;letter-spacing:-.3px;line-height:1.13;}
+  header .spacer{flex:1;}
+  .ghost{
+    font-family:inherit;font-size:18px;font-weight:700;color:var(--ink-soft);
+    background:#fff;border:2px solid var(--line);border-radius:14px;
+    padding:12px 13px;min-height:50px;cursor:pointer;
+  }
+  .ghost:active{background:#f2f5fa;}
+
+  /* ---------------- status pill ---------------- */
+  #status{
+    display:flex;align-items:center;gap:12px;
+    background:#fff;border-radius:16px;padding:13px 16px;
+    font-size:19px;font-weight:600;color:var(--ink-soft);
+    min-height:54px;box-shadow:0 1px 0 rgba(15,33,55,.06);
+    border:1px solid var(--line);
+  }
+  #status .dot{width:14px;height:14px;border-radius:50%;background:#9aa6b6;flex:0 0 auto;}
+  #status.listening .dot{background:var(--red);animation:pulse .9s infinite;}
+  #status.working .dot{background:var(--amber);animation:pulse .9s infinite;}
+  #status.ok .dot{background:var(--green);}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.82)}}
+
+  /* ---------------- hero / answer panel ---------------- */
+  #hero{
+    background:var(--card);border-radius:26px;box-shadow:var(--shadow);
+    padding:20px;display:flex;flex-direction:column;align-items:center;
+    text-align:center;gap:11px;min-height:214px;justify-content:center;
+    border:1px solid var(--line);
+  }
+  #heroIcon{
+    width:92px;height:92px;border-radius:27px;flex:0 0 auto;
+    background:#eaf1fb;display:flex;align-items:center;justify-content:center;
+    font-size:50px;line-height:1;
+  }
+  #heroIcon.live{background:#fdeceb;animation:throb 1.1s infinite;}
+  @keyframes throb{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
+  #heroHead{font-size:21px;color:var(--ink-soft);font-weight:700;}
+  #heroMain{font-size:32px;font-weight:800;letter-spacing:-.4px;line-height:1.15;}
+  #heroSub{font-size:19px;color:var(--ink-soft);}
+
+  /* ---------------- waveform ---------------- */
+  #wave{display:none;align-items:flex-end;gap:5px;height:36px;}
+  #wave.on{display:flex;}
+  #wave i{width:7px;border-radius:4px;background:var(--red);height:10px;animation:w 1s infinite ease-in-out;}
+  #wave i:nth-child(1){animation-delay:0s}
+  #wave i:nth-child(2){animation-delay:.12s}
+  #wave i:nth-child(3){animation-delay:.24s}
+  #wave i:nth-child(4){animation-delay:.36s}
+  #wave i:nth-child(5){animation-delay:.48s}
+  #wave i:nth-child(6){animation-delay:.6s}
+  #wave i:nth-child(7){animation-delay:.72s}
+  @keyframes w{0%,100%{height:10px}50%{height:32px}}
+
+  /* ---------------- heard strip ---------------- */
+  #heard{
+    display:none;background:#e8f0fb;border:1px solid #c9dcf5;border-radius:16px;
+    padding:12px 15px;font-size:19px;color:#26466e;
+  }
+  #heard.on{display:block;}
+
+  /* ---------------- big action buttons ---------------- */
+  .actions{display:flex;flex-direction:column;gap:13px;}
+  .big{
+    font-family:inherit;border:0;border-radius:24px;color:#fff;
+    display:flex;align-items:center;gap:17px;text-align:left;
+    padding:19px 21px;min-height:104px;width:100%;cursor:pointer;
+    font-weight:800;letter-spacing:-.2px;box-shadow:var(--shadow);
+    transition:transform .07s;
+  }
+  .big:active{transform:translateY(3px);box-shadow:0 1px 0 rgba(15,33,55,.18);}
+  .big .ic{
+    width:62px;height:62px;border-radius:19px;flex:0 0 auto;
+    background:rgba(255,255,255,.18);
+    display:flex;align-items:center;justify-content:center;font-size:35px;
+  }
+  .big .tx{display:flex;flex-direction:column;}
+  .big .tx b{font-size:28px;line-height:1.1;}
+  .big .tx span{font-size:18px;font-weight:600;opacity:.92;margin-top:3px;}
+  #btnRemember{background:linear-gradient(165deg,#2470c7,#164d92);}
+  #btnRemember.on{background:linear-gradient(165deg,#c8402f,#8f2318);}
+  #btnAsk{background:linear-gradient(165deg,#229254,#146137);}
+  .big:disabled{opacity:.5;}
+
+  /* ---------------- panels / tiles ---------------- */
+  .panel{
+    background:var(--card);border-radius:24px;border:1px solid var(--line);
+    box-shadow:var(--shadow);padding:17px;
+  }
+  .panel h2{font-size:20px;margin:0 0 13px;color:var(--ink-soft);font-weight:800;}
+  #tiles,#chips{display:grid;grid-template-columns:repeat(3,1fr);gap:11px;}
+  .tile{
+    font-family:inherit;cursor:pointer;border:2px solid var(--line);
+    background:var(--tile);border-radius:20px;padding:15px 7px;
+    display:flex;flex-direction:column;align-items:center;gap:8px;
+    min-height:112px;justify-content:center;
+  }
+  .tile:active{background:#e4ecf8;border-color:#b9cde8;}
+  .tile .ti{font-size:41px;line-height:1;}
+  .tile .tn{font-size:18px;font-weight:800;color:var(--ink);text-align:center;line-height:1.1;}
+
+  /* ---------------- fix bar ---------------- */
+  #fix{display:none;gap:11px;}
+  #fix.on{display:flex;}
+  #fix button{
+    flex:1;font-family:inherit;font-size:19px;font-weight:800;cursor:pointer;
+    border-radius:18px;padding:17px;min-height:66px;background:#fff;
+    border:3px solid var(--ink);color:var(--ink);
+  }
+  #fix button:active{background:#f1f4f9;}
+
+  /* ---------------- list ---------------- */
+  #listWrap{display:none;overflow-y:auto;max-height:50vh;}
+  #listWrap.on{display:block;}
+  .row{
+    display:flex;align-items:center;gap:11px;padding:12px 2px;
+    border-bottom:2px solid #eef1f6;
+  }
+  .row:last-child{border-bottom:0;}
+  .row .ric{
+    width:54px;height:54px;border-radius:16px;background:#eaf1fb;flex:0 0 auto;
+    display:flex;align-items:center;justify-content:center;font-size:27px;
+  }
+  .row .rt{flex:1;min-width:0;}
+  .row .rt b{font-size:21px;display:block;}
+  .row .rt span{font-size:17px;color:var(--ink-soft);display:block;}
+  .row .rd{
+    width:56px;height:56px;border-radius:16px;border:2px solid var(--line);
+    background:#fff;font-size:23px;cursor:pointer;flex:0 0 auto;font-family:inherit;
+  }
+  .row .rd:active{background:#f1f4f9;}
+  .row .rs{
+    border:2px solid var(--blue);color:var(--blue);background:#fff;
+    border-radius:16px;font-size:18px;font-weight:800;font-family:inherit;
+    padding:12px 14px;min-height:56px;cursor:pointer;flex:0 0 auto;
+  }
+
+  /* ---------------- install hint ---------------- */
+  #installHint{
+    display:none;background:#fff8e6;border:1px solid #f0dca6;border-radius:18px;
+    padding:14px 16px;font-size:18px;color:#6a5217;line-height:1.35;
+  }
+  #installHint.on{display:block;}
+  #installHint b{display:block;margin-bottom:4px;font-size:19px;}
+  #installHint button{
+    font-family:inherit;margin-top:10px;font-size:17px;font-weight:700;
+    background:#fff;border:2px solid #d9c483;border-radius:12px;
+    padding:10px 14px;min-height:46px;cursor:pointer;color:#6a5217;
+  }
+
+  footer{margin-top:auto;text-align:center;font-size:16px;color:#7d8899;padding:4px 0 2px;}
+
+  @media (min-width:640px){
+    #tiles,#chips{grid-template-columns:repeat(4,1fr);}
+    #heroMain{font-size:36px;}
+  }
+  @media (display-mode:standalone){
+    header{padding-top:2px;}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo" aria-hidden="true">🧠</div>
+  <div><h1>Where Did I Put It?</h1></div>
+  <div class="spacer"></div>
+  <button class="ghost" id="toggleList" type="button" aria-label="Show my list">📋</button>
+  <button class="ghost" id="toggleVoice" type="button" aria-label="Turn the voice on or off">🔊</button>
+</header>
+
+<div id="status" role="status" aria-live="polite">
+  <span class="dot" aria-hidden="true"></span>
+  <span id="statusText">Tap the blue button, then say where you put it.</span>
+</div>
+
+<div id="hero">
+  <div id="heroIcon" aria-hidden="true">👋</div>
+  <div id="heroHead">Ready when you are</div>
+  <div id="heroMain"></div>
+  <div id="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  <div id="heroSub">Press the blue button and speak.</div>
+</div>
+
+<div id="heard" aria-live="polite"></div>
+
+<div class="actions">
+  <button class="big" id="btnRemember" type="button">
+    <span class="ic" aria-hidden="true">🎙️</span>
+    <span class="tx">
+      <b id="rememberLabel">Remember This</b>
+      <span id="rememberSub">Tap, speak, tap again</span>
+    </span>
+  </button>
+
+  <button class="big" id="btnAsk" type="button">
+    <span class="ic" aria-hidden="true">🔎</span>
+    <span class="tx">
+      <b>Where Is It?</b>
+      <span>Tap, then say the thing</span>
+    </span>
+  </button>
+</div>
+
+<div id="fix">
+  <button id="btnAgain" type="button">🔁 Say it again</button>
+  <button id="btnWrong" type="button">✋ That’s not right</button>
+</div>
+
+<div class="panel" id="tileCard">
+  <h2 id="tilePrompt">Or tap the thing</h2>
+  <div id="tiles"></div>
+</div>
+
+<div class="panel" id="chipCard" style="display:none">
+  <h2 id="chipPrompt">Which one?</h2>
+  <div id="chips"></div>
+</div>
+
+<div class="panel" id="listWrap">
+  <h2>Everything remembered</h2>
+  <div id="list"></div>
+  <div style="margin-top:15px;display:flex;gap:10px;flex-wrap:wrap">
+    <button class="ghost" id="btnShare" type="button" style="flex:1;min-width:150px;font-size:19px;min-height:60px">📤 Share the list</button>
+    <button class="ghost" id="btnClear" type="button" style="flex:1;min-width:150px;font-size:19px;min-height:60px">🧹 Clear the list</button>
+  </div>
+</div>
+
+<div id="installHint">
+  <b id="installTitle">Put it on your home screen</b>
+  <span id="installBody">So it opens like a normal app, with its own icon.</span>
+  <button id="installDone" type="button">Got it</button>
+</div>
+
+<footer>Works without internet. Everything stays on this device.</footer>
+
+<script>
+(function(){
+  "use strict";
+
+  var STORE_KEY = "wheredidiputit.entries.v3";
+  var VOICE_KEY = "wheredidiputit.voice.v3";
+  var HINT_KEY  = "wheredidiputit.hint.v3";
+
+  /* ============================================================
+     ITEM MENU — the icon tiles.
+  ============================================================ */
+  var ITEMS = [
+    { key:"keys",        words:["keys","key","car keys","house keys"],                        emoji:"🔑" },
+    { key:"glasses",     words:["glasses","glass","spectacles","specs","reading glasses"],     emoji:"👓" },
+    { key:"wallet",      words:["wallet","purse","billfold"],                                 emoji:"👛" },
+    { key:"phone",       words:["phone","mobile","iphone","telephone","cell","mobile phone"],  emoji:"📱" },
+    { key:"hearing aid", words:["hearing aid","hearing aids","aid"],                           emoji:"👂" },
+    { key:"medication",  words:["medication","medications","tablets","pills","medicine"],      emoji:"💊" },
+    { key:"remote",      words:["remote","remote control","clicker"],                          emoji:"📺" },
+    { key:"teeth",       words:["teeth","dentures","denture","plate"],                         emoji:"🦷" },
+    { key:"umbrella",    words:["umbrella"],                                                   emoji:"☂️" },
+    { key:"handbag",     words:["handbag","bag"],                                              emoji:"👜" },
+    { key:"documents",   words:["documents","paperwork","papers","mail","letter","letters"],   emoji:"📄" },
+    { key:"charger",     words:["charger","cable","lead"],                                     emoji:"🔌" }
+  ];
+
+  var PLACES = [
+    ["hall table","on the hall table"], ["coffee table","on the coffee table"],
+    ["kitchen bench","on the kitchen bench"], ["kitchen table","on the kitchen table"],
+    ["bench","on the bench"], ["bedside table","on the bedside table"],
+    ["nightstand","on the bedside table"], ["dining table","on the dining table"],
+    ["dining room","in the dining room"], ["bathroom cabinet","in the bathroom cabinet"],
+    ["medicine cabinet","in the medicine cabinet"], ["bathroom","in the bathroom"],
+    ["bedroom","in the bedroom"], ["kitchen","in the kitchen"], ["lounge","in the lounge"],
+    ["living room","in the living room"], ["laundry","in the laundry"],
+    ["washing machine","in the washing machine"], ["car","in the car"],
+    ["handbag","in your handbag"], ["purse","in your purse"], ["pocket","in your pocket"],
+    ["top drawer","in the top drawer"], ["drawer","in the drawer"],
+    ["cupboard","in the cupboard"], ["fridge","in the fridge"], ["freezer","in the freezer"],
+    ["microwave","by the microwave"], ["front door","by the front door"],
+    ["back door","by the back door"], ["door","by the door"], ["couch","on the couch"],
+    ["sofa","on the sofa"], ["chair","on the chair"], ["shelf","on the shelf"],
+    ["hook","on the hook"], ["charger","on the charger"], ["work","at work"],
+    ["garage","in the garage"], ["shed","in the shed"], ["garden","in the garden"],
+    ["letterbox","in the letterbox"], ["office","in the office"], ["stairs","on the stairs"]
+  ];
+
+  function loadEntries(){
+    try{ return JSON.parse(localStorage.getItem(STORE_KEY) || "[]"); }catch(e){ return []; }
+  }
+  function saveEntries(){
+    try{ localStorage.setItem(STORE_KEY, JSON.stringify(entries)); }catch(e){}
+  }
+  var entries = loadEntries();
+
+  function normalise(s){
+    return String(s||"").toLowerCase().replace(/[^\w\s']/g," ").replace(/\s+/g," ").trim();
+  }
+  function findItem(text){
+    var t = " " + normalise(text) + " ";
+    var best=null, bestLen=0;
+    ITEMS.forEach(function(item){
+      item.words.forEach(function(w){
+        if (t.indexOf(" "+w+" ")!==-1 && w.length>bestLen){ best=item; bestLen=w.length; }
+      });
+    });
+    return best;
+  }
+  function findPlace(text){
+    var t = normalise(text), best=null, bestLen=0;
+    PLACES.forEach(function(p){
+      if (t.indexOf(p[0])!==-1 && p[0].length>bestLen){ best=p[1]; bestLen=p[0].length; }
+    });
+    if (best) return best;
+    var cleaned = t.replace(/\b(i|put|left|placed|have|had|has|my|the|a|an|is|was|are|were|on|in|at|it|they|them|sitting|its|s|am|to|of|for)\b/g," ")
+                   .replace(/\s+/g," ").trim();
+    return cleaned ? "in " + cleaned : "";
+  }
+  function titleCase(s){ return String(s).replace(/\b\w/g,function(c){return c.toUpperCase();}); }
+  function cap(s){ return s ? s.charAt(0).toUpperCase()+s.slice(1) : s; }
+
+  function whenPhrase(ts){
+    var d=new Date(ts), now=new Date();
+    var days=Math.floor((new Date(now.getFullYear(),now.getMonth(),now.getDate())
+                       - new Date(d.getFullYear(),d.getMonth(),d.getDate()))/86400000);
+    var day;
+    if (days<=0) day="today";
+    else if (days===1) day="yesterday";
+    else if (days<7) day=days+" days ago";
+    else day="on "+d.toLocaleDateString(undefined,{day:"numeric",month:"long"});
+    var h=d.getHours();
+    var part = h<12 ? "morning" : h<17 ? "afternoon" : "evening";
+    return day+" "+part;
+  }
+  function recallFor(key){
+    var hits = entries.filter(function(e){return e.item===key;})
+                      .sort(function(a,b){return b.ts-a.ts;});
+    return hits[0]||null;
+  }
+
+  /* ============================================================
+     VOICE OUT
+  ============================================================ */
+  var voiceOn = localStorage.getItem(VOICE_KEY) !== "off";
+  function speak(text){
+    if (!voiceOn || !("speechSynthesis" in window)) return;
+    try{
+      window.speechSynthesis.cancel();
+      var u = new SpeechSynthesisUtterance(text);
+      u.rate=0.85; u.pitch=1; u.volume=1;
+      var vs = window.speechSynthesis.getVoices()||[];
+      /* prefer an Australian voice, then any English voice */
+      for (var i=0;i<vs.length;i++){ if (/en[-_]AU/i.test(vs[i].lang)){ u.voice=vs[i]; break; } }
+      if (!u.voice){ for (var j=0;j<vs.length;j++){ if (/^en/i.test(vs[j].lang)){ u.voice=vs[j]; break; } } }
+      window.speechSynthesis.speak(u);
+    }catch(e){}
+  }
+
+  /* ============================================================
+     DOM
+  ============================================================ */
+  var el = {
+    status:document.getElementById("status"),
+    statusText:document.getElementById("statusText"),
+    heroIcon:document.getElementById("heroIcon"),
+    heroHead:document.getElementById("heroHead"),
+    heroMain:document.getElementById("heroMain"),
+    heroSub:document.getElementById("heroSub"),
+    wave:document.getElementById("wave"),
+    heard:document.getElementById("heard"),
+    btnRemember:document.getElementById("btnRemember"),
+    btnAsk:document.getElementById("btnAsk"),
+    rememberLabel:document.getElementById("rememberLabel"),
+    rememberSub:document.getElementById("rememberSub"),
+    fix:document.getElementById("fix"),
+    btnAgain:document.getElementById("btnAgain"),
+    btnWrong:document.getElementById("btnWrong"),
+    tileCard:document.getElementById("tileCard"),
+    tilePrompt:document.getElementById("tilePrompt"),
+    tiles:document.getElementById("tiles"),
+    chipCard:document.getElementById("chipCard"),
+    chipPrompt:document.getElementById("chipPrompt"),
+    chips:document.getElementById("chips"),
+    listWrap:document.getElementById("listWrap"),
+    list:document.getElementById("list"),
+    btnShare:document.getElementById("btnShare"),
+    btnClear:document.getElementById("btnClear"),
+    toggleList:document.getElementById("toggleList"),
+    toggleVoice:document.getElementById("toggleVoice"),
+    hint:document.getElementById("installHint"),
+    hintTitle:document.getElementById("installTitle"),
+    hintBody:document.getElementById("installBody"),
+    hintDone:document.getElementById("installDone")
+  };
+
+  function setStatus(kind,text){ el.status.className=kind||""; el.statusText.textContent=text; }
+  function setHero(o){
+    if (o.icon!==undefined) el.heroIcon.textContent=o.icon;
+    el.heroIcon.className = o.live ? "live" : "";
+    if (o.head!==undefined) el.heroHead.textContent=o.head;
+    if (o.main!==undefined) el.heroMain.textContent=o.main;
+    if (o.sub!==undefined) el.heroSub.textContent=o.sub;
+    el.wave.className = o.wave ? "on" : "";
+  }
+  function showHeard(t){
+    if (!t){ el.heard.className=""; el.heard.textContent=""; return; }
+    el.heard.className="on";
+    el.heard.textContent="I heard: “"+t+"”";
+  }
+  function hideFix(){ el.fix.className=""; }
+
+  /* ============================================================
+     VOICE IN
+  ============================================================ */
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var rec=null, mode=null, finalText="", fallbackTimer=null;
+
+  function startListening(which){
+    if (!SR){
+      setStatus("", "Speech isn’t available here. Tap a tile instead.");
+      setHero({icon:"⚠️", head:"Speech isn’t available", main:"Tap a tile", sub:"You can still save and find things by tapping."});
+      return;
+    }
+    mode=which; finalText="";
+    hideFix(); showHeard("");
+    el.btnRemember.disabled=true; el.btnAsk.disabled=true;
+
+    if (which==="remember"){
+      el.btnRemember.classList.add("on");
+      el.rememberLabel.textContent="Tap To Stop";
+      el.rememberSub.textContent="Listening now…";
+      setStatus("listening","Listening. Say where you put it…");
+      setHero({icon:"🎙️", live:true, wave:true, head:"Listening…",
+               main:"Where did you put it?", sub:"Say it in your own words. Tap the red button when you’re done."});
+    }else{
+      setStatus("listening","Listening. Say what you’re looking for…");
+      setHero({icon:"🎙️", live:true, wave:true, head:"Listening…",
+               main:"What are you looking for?", sub:"Just say the one word, like “glasses”."});
+    }
+
+    try{
+      rec=new SR();
+      rec.lang="en-AU"; rec.continuous=false; rec.interimResults=true; rec.maxAlternatives=3;
+
+      rec.onresult=function(ev){
+        var interim="";
+        for (var i=ev.resultIndex;i<ev.results.length;i++){
+          var res=ev.results[i];
+          if (res.isFinal){
+            finalText += res[0].transcript + " ";
+            for (var a=1;a<res.length;a++) finalText += res[a].transcript + " ";
+          } else interim += res[0].transcript;
+        }
+        var shown=(finalText+" "+interim).trim();
+        if (shown){ showHeard(shown); if (which==="remember") setHero({main:shown}); }
+      };
+
+      rec.onerror=function(ev){
+        if (ev.error==="not-allowed"||ev.error==="service-not-allowed"){
+          resetButtons();
+          setStatus("","I need permission to use the microphone.");
+          setHero({icon:"🔇", head:"Microphone is blocked", main:"Allow it, then try again",
+                   sub:"Or just tap a tile below — that works without the microphone."});
+          return;
+        }
+        finishListening(ev.error==="no-speech"||ev.error==="aborted");
+      };
+
+      rec.onend=function(){ finishListening(false); };
+      rec.start();
+
+      clearTimeout(fallbackTimer);
+      fallbackTimer=setTimeout(function(){ if (mode){ try{rec.stop();}catch(e){} } },15000);
+    }catch(e){
+      resetButtons();
+      setStatus("","Couldn’t start listening. Try tapping again.");
+    }
+  }
+
+  function resetButtons(){
+    el.btnRemember.disabled=false; el.btnAsk.disabled=false;
+    el.btnRemember.classList.remove("on");
+    el.rememberLabel.textContent="Remember This";
+    el.rememberSub.textContent="Tap, speak, tap again";
+  }
+  function stopListening(){ if (rec){ try{rec.stop();}catch(e){} } }
+
+  function finishListening(quiet){
+    clearTimeout(fallbackTimer);
+    var which=mode; mode=null; resetButtons();
+    if (!which) return;
+    var text=finalText.trim();
+    if (!text){
+      setHero({icon:"🤔", head:"", main:"I didn’t catch that", sub:"Speak close to the phone, or tap a tile below."});
+      setStatus("","I didn’t catch that.");
+      if (!quiet) speak("I didn't catch that. Try again.");
+      return;
+    }
+    if (which==="remember") handleRemember(text); else handleAsk(text);
+  }
+
+  /* ============================================================
+     REMEMBER
+  ============================================================ */
+  var pending=null;
+
+  function handleRemember(raw){
+    var item=findItem(raw), place=findPlace(raw);
+    if (!item){ askWhich(raw, place, "remember"); return; }
+    commit(item, place, raw);
+  }
+
+  function commit(item, place, raw){
+    var entry={ item:item.key, emoji:item.emoji,
+                place: cap(place)||"Somewhere you know",
+                raw:raw, ts:Date.now() };
+    entries = entries.filter(function(e){return e.item!==item.key;});
+    entries.push(entry);
+    saveEntries();
+    showHeard("");
+    setStatus("ok","Saved.");
+    setHero({ icon:item.emoji, head:"Saved " + whenPhrase(entry.ts),
+              main:titleCase(item.key)+" — "+entry.place.toLowerCase()+".",
+              sub:"Tap the blue button again whenever this changes." });
+    speak(titleCase(item.key)+". "+entry.place+". Saved.");
+    pending=entry;
+    el.fix.className="on";
+    renderList();
+  }
+
+  function askWhich(raw, place, intent){
+    el.chipPrompt.textContent = intent==="remember"
+      ? "Which thing did you put away?" : "Which thing are you looking for?";
+    el.chips.innerHTML="";
+    ITEMS.slice(0,6).forEach(function(item){
+      el.chips.appendChild(makeTile(item, function(){
+        hideChips();
+        if (intent==="remember") commit(item, place, raw); else recall(item);
+      }));
+    });
+    el.chipCard.style.display="";
+    setStatus("", intent==="remember" ? "Which thing is it?" : "Which thing?");
+    speak(intent==="remember" ? "Which thing did you put away?" : "Which thing are you looking for?");
+  }
+  function hideChips(){ el.chipCard.style.display="none"; el.chips.innerHTML=""; }
+
+  /* ============================================================
+     ASK
+  ============================================================ */
+  function handleAsk(raw){
+    var item=findItem(raw);
+    if (!item){ askWhich(raw,"","ask"); return; }
+    recall(item);
+  }
+
+  function recall(item){
+    var hit=recallFor(item.key);
+    showHeard("");
+    if (!hit){
+      setStatus("ok","Nothing saved yet.");
+      setHero({icon:item.emoji, head:"No answer yet",
+               main:"I don’t know where your "+item.key+" is",
+               sub:"Press Remember This and tell me once."});
+      speak("I don't know where your "+item.key+" is yet. Tell me with the blue button and I'll remember.");
+      return;
+    }
+    setStatus("ok","Here it is.");
+    setHero({ icon:item.emoji, head:"You told me " + whenPhrase(hit.ts),
+              main:titleCase(item.key)+" — "+hit.place.toLowerCase()+".",
+              sub:"Saved " + whenPhrase(hit.ts) + ". Say it again any time." });
+    speak(titleCase(item.key)+". "+hit.place+". You told me "+whenPhrase(hit.ts)+".");
+  }
+
+  /* ============================================================
+     TILES
+  ============================================================ */
+  function makeTile(item, onClick){
+    var b=document.createElement("button");
+    b.type="button"; b.className="tile";
+    var i=document.createElement("span"); i.className="ti"; i.textContent=item.emoji;
+    var n=document.createElement("span"); n.className="tn"; n.textContent=titleCase(item.key);
+    b.appendChild(i); b.appendChild(n);
+    b.onclick=onClick;
+    return b;
+  }
+
+  /* Tapping a tile: if we know where it is, tell them. If not, ask where —
+     and this is the answer to "what if the microphone never works". */
+  var tileIntent="ask";
+  function renderTiles(){
+    el.tiles.innerHTML="";
+    ITEMS.forEach(function(item){
+      el.tiles.appendChild(makeTile(item, function(){
+        if (tileIntent==="ask"){
+          recall(item);
+        } else {
+          var hit=recallFor(item.key);
+          var where=(hit && hit.place) ? hit.place.toLowerCase() : "somewhere";
+          var p=window.prompt(
+            "Where is your " + item.key + "?",
+            (hit && hit.place) ? hit.place : "");
+          if (p===null) return;
+          commit(item, cap(p.trim())||"Somewhere you know", item.key+" "+p.trim());
+        }
+      }));
+    });
+  }
+
+  /* ============================================================
+     LIST
+  ============================================================ */
+  function renderList(){
+    el.list.innerHTML="";
+    if (!entries.length){
+      var d=document.createElement("div");
+      d.style.cssText="font-size:19px;color:#6a7789;padding:8px 0";
+      d.textContent="Nothing yet. Tap the blue button and say where you put something.";
+      el.list.appendChild(d);
+      return;
+    }
+    entries.slice().sort(function(a,b){return b.ts-a.ts;}).forEach(function(e){
+      var row=document.createElement("div"); row.className="row";
+      var ic=document.createElement("div"); ic.className="ric"; ic.textContent=e.emoji||"📦";
+      var t=document.createElement("div"); t.className="rt";
+      var b=document.createElement("b"); b.textContent=titleCase(e.item);
+      var s=document.createElement("span"); s.textContent=e.place+" · "+whenPhrase(e.ts);
+      t.appendChild(b); t.appendChild(s);
+
+      var say=document.createElement("button");
+      say.className="rs"; say.type="button"; say.textContent="🔊";
+      say.setAttribute("aria-label","Say it out loud");
+      say.onclick=function(){
+        speak(titleCase(e.item)+". "+e.place+". You told me "+whenPhrase(e.ts)+".");
+        setHero({ icon:e.emoji, head:"You told me "+whenPhrase(e.ts),
+                  main:titleCase(e.item)+" — "+e.place.toLowerCase()+".",
+                  sub:"Saved "+whenPhrase(e.ts)+"." });
+      };
+
+      var del=document.createElement("button");
+      del.className="rd"; del.type="button"; del.textContent="✕";
+      del.setAttribute("aria-label","Remove "+e.item);
+      del.onclick=function(){
+        entries=entries.filter(function(x){return x.ts!==e.ts;});
+        saveEntries(); renderList(); setStatus("","Removed.");
+      };
+
+      row.appendChild(ic); row.appendChild(t); row.appendChild(say); row.appendChild(del);
+      el.list.appendChild(row);
+    });
+  }
+
+  /* ============================================================
+     BUTTONS
+  ============================================================ */
+  el.btnRemember.onclick=function(){
+    if (mode){ stopListening(); return; }
+    tileIntent="remember";
+    startListening("remember");
+  };
+  el.btnAsk.onclick=function(){
+    if (mode){ stopListening(); return; }
+    tileIntent="ask";
+    startListening("ask");
+  };
+  el.btnAgain.onclick=function(){ hideFix(); tileIntent="remember"; startListening("remember"); };
+  el.btnWrong.onclick=function(){
+    if (pending){
+      entries=entries.filter(function(e){return e.ts!==pending.ts;});
+      saveEntries(); renderList();
+    }
+    hideFix();
+    setStatus("","OK — tap the blue button and say it again.");
+    setHero({icon:"👋", head:"Let’s try again", main:"", sub:"Press the blue button."});
+    speak("Okay. Let's try again.");
+  };
+
+  el.toggleList.onclick=function(){
+    var open=el.listWrap.classList.toggle("on");
+    if (open){ renderList(); speak("Here is your list."); }
+  };
+
+  el.toggleVoice.onclick=function(){
+    voiceOn=!voiceOn;
+    localStorage.setItem(VOICE_KEY, voiceOn?"on":"off");
+    el.toggleVoice.textContent = voiceOn ? "🔊" : "🔇";
+    if (voiceOn) speak("Voice is on.");
+    else if ("speechSynthesis" in window){ try{ window.speechSynthesis.cancel(); }catch(e){} }
+  };
+  el.toggleVoice.textContent = voiceOn ? "🔊" : "🔇";
+
+  /* ---- share: the list as plain text, so it survives a lost phone ---- */
+  el.btnShare.onclick=function(){
+    if (!entries.length){ setStatus("","There’s nothing to share yet."); return; }
+    var lines=["Where Did I Put It? — my list",""];
+    entries.slice().sort(function(a,b){return b.ts-a.ts;}).forEach(function(e){
+      lines.push(titleCase(e.item)+" — "+e.place+" ("+whenPhrase(e.ts)+")");
+    });
+    lines.push("","Saved on "+new Date().toLocaleString());
+    var text=lines.join("\n");
+    if (navigator.share){
+      navigator.share({title:"Where Did I Put It?", text:text}).catch(function(){});
+    } else if (navigator.clipboard){
+      navigator.clipboard.writeText(text).then(function(){
+        setStatus("ok","Copied. Paste it into a message to keep a copy.");
+        speak("Copied. Paste it into a message to keep a copy.");
+      }).catch(function(){ setStatus("","Couldn’t copy the list."); });
+    } else {
+      setStatus("","Sharing isn’t available in this browser.");
+    }
+  };
+
+  /* ---- clear: one tap, then the button itself becomes undo ---- */
+  var clearArmed=false;
+  el.btnClear.onclick=function(){
+    if (!entries.length){ setStatus("","The list is already empty."); return; }
+    if (!clearArmed){
+      window.__undo=entries.slice();
+      entries=[]; saveEntries(); renderList(); clearArmed=true;
+      el.btnClear.textContent="↩️ Undo — bring it back";
+      setStatus("ok","Cleared.");
+      speak("List cleared. Tap undo if that was a mistake.");
+      return;
+    }
+    entries=window.__undo||[]; window.__undo=null; saveEntries(); renderList();
+    clearArmed=false;
+    el.btnClear.textContent="🧹 Clear the list";
+    setStatus("ok","Back again.");
+    speak("Your list is back.");
+  };
+
+  /* ============================================================
+     INSTALL TO HOME SCREEN
+  ============================================================ */
+  var isStandalone = (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches)
+                   || window.navigator.standalone === true;
+  var ua = navigator.userAgent || "";
+  var isIOS = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  var deferredPrompt = null;
+
+  window.addEventListener("beforeinstallprompt", function(e){
+    e.preventDefault();
+    deferredPrompt = e;
+    installable();
+  });
+
+  function installable(){
+    if (localStorage.getItem(HINT_KEY)==="done" || isStandalone) return;
+    if (isIOS){
+      el.hintTitle.textContent="Put it on your home screen";
+      el.hintBody.innerHTML="Tap <b style='display:inline'>Share</b> at the bottom of Safari " +
+        "(the square with the arrow), then choose <b style='display:inline'>Add to Home Screen</b>. " +
+        "It will then open like a normal app, with its own icon.";
+      el.hint.className="on";
+    } else if (deferredPrompt){
+      el.hintTitle.textContent="Put it on your home screen";
+      el.hintBody.innerHTML="So it opens like a normal app, with its own icon.";
+      el.hint.className="on";
+      el.hintDone.textContent="Install it now";
+      el.hintDone.onclick=function(){
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.then(function(){
+          localStorage.setItem(HINT_KEY,"done");
+          el.hint.className="";
+        });
+      };
+    }
+  }
+
+  el.hintDone.addEventListener("click", function(){
+    localStorage.setItem(HINT_KEY,"done");
+    el.hint.className="";
+    if (isIOS){ el.hintDone.textContent="Got it"; }
+  });
+
+  if (!isStandalone) setTimeout(installable, 1200);
+
+  /* ============================================================
+     SHORTCUTS — long-press the home-screen icon
+  ============================================================ */
+  var params = new URLSearchParams(location.search);
+  var action = params.get("action");
+
+  /* ============================================================
+     FIRST RUN — one worked example, so the first tap can't fail.
+  ============================================================ */
+  if (!localStorage.getItem(STORE_KEY)){
+    entries=[{ item:"glasses", emoji:"👓", place:"On the bedside table",
+               raw:"my glasses are on the bedside table",
+               ts: Date.now()-1000*60*60*26 }];
+    saveEntries();
+  }
+
+  renderTiles();
+  renderList();
+  setHero({icon:"👋", head:"Ready when you are", main:"", sub:"Press the blue button and speak."});
+
+  if (action==="remember") setTimeout(function(){ el.btnRemember.click(); }, 500);
+  if (action==="ask")      setTimeout(function(){ el.btnAsk.click(); }, 500);
+
+  /* ============================================================
+     OFFLINE
+  ============================================================ */
+  if ("serviceWorker" in navigator){
+    window.addEventListener("load", function(){
+      navigator.serviceWorker.register("sw.js").catch(function(){});
+    });
+  }
+})();
+</script>
+</body>
+</html>
