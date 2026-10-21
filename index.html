@@ -919,5 +919,35 @@
   }
 })();
 </script>
+  <!-- App sharing and contact footer -->
+<footer style="text-align:center; padding:24px 12px; font-family:Arial,sans-serif;">
+  <button id="share-app-btn" type="button"
+    style="background:#693bd4;color:white;border:0;border-radius:12px;padding:15px 24px;font-size:18px;font-weight:bold;cursor:pointer;">
+    ↗ Share App
+  </button>
+  <p style="margin:18px 0 5px;">© 2026 Yuri Lemming Apps</p>
+  <a href="mailto:info@lemming.email">info@lemming.email</a>
+</footer>
+
+<script>
+document.getElementById('share-app-btn').addEventListener('click', async () => {
+  const url = 'https://lyosnik.github.io/where-did-i-put-it/index.html';
+  if (navigator.share) {
+    try {
+      await navigator.share({
+        title: 'Where Did I Put It',
+        text: 'Try this handy app!',
+        url: url
+      });
+    } catch (error) {
+      if (error.name !== 'AbortError') {
+        window.prompt('Copy this app link:', url);
+      }
+    }
+  } else {
+    window.prompt('Copy this app link:', url);
+  }
+});
+</script>
 </body>
 </html>
